@@ -5,11 +5,13 @@
 
 import os
 import json
+import re
 from datetime import datetime
 from typing import List, Dict
 import akshare as ak
 
-from data_provider.low_price_fetcher import LowPriceStockFetcher
+# 直接导入我们的文件
+from low_price_fetcher import LowPriceStockFetcher
 from search_service import NewsSearchService
 import google.generativeai as genai
 
