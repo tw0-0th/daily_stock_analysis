@@ -6,6 +6,7 @@
 import os
 import json
 import re
+import time
 from datetime import datetime
 from typing import List, Dict
 import akshare as ak
@@ -15,17 +16,18 @@ from low_price_fetcher import LowPriceStockFetcher
 from search_service import NewsSearchService
 import google.generativeai as genai
 
+
 class StockAnalyzer:
     """股票分析器"""
     
     def __init__(self):
         # 读取配置
         self.my_stocks = self._parse_stock_list(os.getenv('MY_STOCKS', ''))
-    
+        
         # 添加调试信息
         print(f"环境变量 MY_STOCKS: {os.getenv('MY_STOCKS', '未设置')}")
         print(f"解析后的自选股: {self.my_stocks}")
-    
+        
         self.price_limit = float(os.getenv('PRICE_LIMIT', '10'))
         self.max_low_price = int(os.getenv('MAX_LOW_PRICE_STOCKS', '5'))
         
@@ -49,36 +51,37 @@ class StockAnalyzer:
         print(f"低价股筛选: <{self.price_limit}元, 推荐{self.max_low_price}只")
     
     def _parse_stock_list(self, stock_str: str) -> List[str]:
+        """解析股票列表字符串"""
         if not stock_str:
             return []
         return [s.strip() for s in stock_str.split(',') if s.strip()]
     
     def get_stock_detail(self, stock_code: str, retry=3):
-    """获取单只股票详情（带重试）"""
-    for i in range(retry):
-        try:
-            df = ak.stock_zh_a_spot_em()
-            stock_info = df[df['代码'] == stock_code]
-            
-            if not stock_info.empty:
-                row = stock_info.iloc[0]
-                return {
-                    'code': stock_code,
-                    'name': row['名称'],
-                    'price': round(float(row['最新价']), 2),
-                    'change': round(float(row['涨跌幅']), 2)
-                }
-            else:
-                # 如果找不到，返回模拟数据
-                return self._get_mock_stock_detail(stock_code)
+        """获取单只股票详情（带重试）"""
+        for i in range(retry):
+            try:
+                df = ak.stock_zh_a_spot_em()
+                stock_info = df[df['代码'] == stock_code]
                 
-        except Exception as e:
-            print(f"获取 {stock_code} 失败 (尝试 {i+1}/{retry}): {e}")
-            if i < retry - 1:
-                time.sleep(2)
+                if not stock_info.empty:
+                    row = stock_info.iloc[0]
+                    return {
+                        'code': stock_code,
+                        'name': row['名称'],
+                        'price': round(float(row['最新价']), 2),
+                        'change': round(float(row['涨跌幅']), 2)
+                    }
+                else:
+                    # 如果找不到，返回模拟数据
+                    return self._get_mock_stock_detail(stock_code)
+                    
+            except Exception as e:
+                print(f"获取 {stock_code} 失败 (尝试 {i+1}/{retry}): {e}")
+                if i < retry - 1:
+                    time.sleep(2)
+        
+        return self._get_mock_stock_detail(stock_code)
     
-    return self._get_mock_stock_detail(stock_code)
-
     def _get_mock_stock_detail(self, stock_code):
         """返回模拟的股票数据"""
         mock_data = {
@@ -87,6 +90,9 @@ class StockAnalyzer:
             '601288': {'name': '农业银行', 'price': 3.82, 'change': 0.3},
             '600567': {'name': '山鹰国际', 'price': 2.78, 'change': 0.8},
             '000858': {'name': '五粮液', 'price': 158.23, 'change': 0.6},
+            '000709': {'name': '河钢股份', 'price': 2.35, 'change': -0.2},
+            '600221': {'name': '海航控股', 'price': 2.08, 'change': 0.5},
+            '601668': {'name': '中国建筑', 'price': 5.43, 'change': 0.6},
         }
         
         if stock_code in mock_data:
@@ -151,7 +157,6 @@ class StockAnalyzer:
             text = response.text
             
             # 提取JSON
-            import re
             json_match = re.search(r'\{.*\}', text, re.DOTALL)
             if json_match:
                 result = json.loads(json_match.group())
@@ -295,6 +300,7 @@ class StockAnalyzer:
     <style>
         body {{ font-family: 'Microsoft YaHei', Arial, sans-serif; max-width: 800px; margin: 0 auto; }}
         h2 {{ color: #333; border-bottom: 2px solid #f0f0f0; padding-bottom: 10px; }}
+        h3 {{ color: #555; margin-top: 20px; }}
         .news-box {{ background-color: #e8f4fd; padding: 15px; border-radius: 8px; margin: 15px 0; }}
         .stock-box {{ background-color: #f9f9f9; padding: 15px; margin: 15px 0; border-radius: 8px; }}
         .stock-good {{ border-left: 4px solid #28a745; }}
@@ -303,6 +309,7 @@ class StockAnalyzer:
         .stats {{ display: flex; gap: 10px; margin: 15px 0; }}
         .stat-item {{ background: #f0f0f0; padding: 10px; border-radius: 5px; flex: 1; text-align: center; }}
         .small {{ color: #666; font-size: 12px; }}
+        hr {{ border: 1px solid #eee; margin: 20px 0; }}
     </style>
 </head>
 <body>
@@ -377,7 +384,7 @@ class StockAnalyzer:
         </ul>
     </div>
     
-    <p class="small">自动生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+    <p class="small">自动生成时间: """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + """</p>
 </body>
 </html>
 """
@@ -385,54 +392,55 @@ class StockAnalyzer:
         return html
     
     def send_email(self, html_content: str):
-    """发送邮件"""
-    import smtplib
-    from email.mime.text import MIMEText
-    from email.mime.multipart import MIMEMultipart
-    
-    sender = os.getenv('EMAIL_SENDER')
-    password = os.getenv('EMAIL_PASSWORD')
-    receivers = os.getenv('EMAIL_RECEIVERS', sender)
-    
-    # 添加调试信息
-    print(f"发件人: {sender}")
-    print(f"收件人: {receivers}")
-    
-    if not sender or not password:
-        print("未配置邮箱，跳过发送")
-        return
-    
-    # 处理多个收件人
-    if receivers:
-        # 如果是字符串，按逗号分割
-        if isinstance(receivers, str):
-            receiver_list = [r.strip() for r in receivers.split(',') if r.strip()]
+        """发送邮件"""
+        import smtplib
+        from email.mime.text import MIMEText
+        from email.mime.multipart import MIMEMultipart
+        
+        sender = os.getenv('EMAIL_SENDER')
+        password = os.getenv('EMAIL_PASSWORD')
+        receivers = os.getenv('EMAIL_RECEIVERS', sender)
+        
+        # 添加调试信息
+        print(f"发件人: {sender}")
+        print(f"收件人: {receivers}")
+        
+        if not sender or not password:
+            print("未配置邮箱，跳过发送")
+            return
+        
+        # 处理多个收件人
+        if receivers:
+            # 如果是字符串，按逗号分割
+            if isinstance(receivers, str):
+                receiver_list = [r.strip() for r in receivers.split(',') if r.strip()]
+            else:
+                receiver_list = [receivers]
         else:
-            receiver_list = [receivers]
-    else:
-        receiver_list = [sender]
-    
-    print(f"收件人列表: {receiver_list}")
-    
-    msg = MIMEMultipart()
-    msg['From'] = sender
-    msg['To'] = ', '.join(receiver_list)  # 多个收件人用逗号分隔
-    msg['Subject'] = f"📊 股票分析报告 {datetime.now().strftime('%Y-%m-%d')}"
-    
-    msg.attach(MIMEText(html_content, 'html', 'utf-8'))
-    
-    try:
-        # 使用QQ邮箱的SMTP服务器
-        server = smtplib.SMTP_SSL('smtp.qq.com', 465)
-        server.login(sender, password)
-        server.send_message(msg)
-        server.quit()
-        print(f"邮件已发送到 {receiver_list}")
-    except Exception as e:
-        print(f"发送邮件失败: {e}")
-        # 打印更详细的错误信息
-        import traceback
-        traceback.print_exc()
+            receiver_list = [sender]
+        
+        print(f"收件人列表: {receiver_list}")
+        
+        msg = MIMEMultipart()
+        msg['From'] = sender
+        msg['To'] = ', '.join(receiver_list)  # 多个收件人用逗号分隔
+        msg['Subject'] = f"📊 股票分析报告 {datetime.now().strftime('%Y-%m-%d')}"
+        
+        msg.attach(MIMEText(html_content, 'html', 'utf-8'))
+        
+        try:
+            # 使用QQ邮箱的SMTP服务器
+            server = smtplib.SMTP_SSL('smtp.qq.com', 465)
+            server.login(sender, password)
+            server.send_message(msg)
+            server.quit()
+            print(f"邮件已发送到 {receiver_list}")
+        except Exception as e:
+            print(f"发送邮件失败: {e}")
+            # 打印更详细的错误信息
+            import traceback
+            traceback.print_exc()
+
 
 def main():
     print("="*50)
@@ -449,6 +457,7 @@ def main():
     analyzer.send_email(html)
     
     print("\n完成！")
+
 
 if __name__ == "__main__":
     main()
